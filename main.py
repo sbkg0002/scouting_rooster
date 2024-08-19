@@ -53,10 +53,11 @@ def generate_grid() -> list[list[str]]:
                     [date.strftime(DATE_NOTATION_STRING), 'Scouts Vrijdag', get_activity(day_counter), '',
                      bijzonderheden, ''])
                 day_counter = day_counter + 1
-                if is_third_friday_of_month(date):
+                if is_third_saturday_of_month(date):
                     bijzonderheden = 'Papier naar buiten'
                 csv_data.append(
-                    [date.strftime(DATE_NOTATION_STRING), 'Rover / Stam', get_activity(day_counter), '', bijzonderheden, ''])
+                    [date.strftime(DATE_NOTATION_STRING), 'Rover / Stam', get_activity(day_counter), '', bijzonderheden,
+                     ''])
             # Saturdays
             case 5:
                 dwijlen = get_activity(day_counter)
@@ -101,19 +102,26 @@ def is_last_saturday_of_month(dt) -> bool:
     return dt + timedelta(days=7) > last_day
 
 
-def is_third_friday_of_month(dt):
-    if dt.weekday() != 5:
+def is_third_saturday_of_month(dt):
+    # we check on Friday
+    sat = dt + timedelta(days=1)
+    # print(sat.strftime(DATE_NOTATION_STRING))
+    if sat.weekday() != 5:
         return False
-    first_day_of_month = dt.replace(day=1)
-    first_friday = first_day_of_month + timedelta(days=(4 - first_day_of_month.weekday() + 7) % 7)
-    third_friday = first_friday + timedelta(weeks=2)
-    print(f'Friday: {dt.date() == third_friday.date()}')
-    return dt.date() == third_friday.date()
+    # Get the first day of the month
+    first_day_of_month = sat.replace(day=1)
+    # Calculate the first Saturday of the month
+    first_saturday = first_day_of_month + timedelta(days=(5 - first_day_of_month.weekday() + 7) % 7)
+    # Calculate the third Saturday
+    third_saturday = first_saturday + timedelta(weeks=2)
+    return sat.date() == third_saturday.date()
+
 
 def is_week_number_even(date):
     week_number = date.isocalendar()[1]
     print(f'{date.strftime(DATE_NOTATION_STRING)}: {week_number % 2 == 0} ({date.isocalendar()})')
     return week_number % 2 == 0
+
 
 def get_activity(day_counter: int) -> str:
     activity_number = day_counter % (len(activities) - 1)
@@ -122,4 +130,3 @@ def get_activity(day_counter: int) -> str:
 
 if __name__ == '__main__':
     write_csv_from_lists(data=generate_grid(), header=generate_header(), filename="rooster.csv")
-
