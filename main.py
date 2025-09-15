@@ -23,22 +23,39 @@ activities = [
 
 
 def generate_grid() -> list[list[str]]:
+    """
+    Generate the schedule grid as a list of rows for CSV output.
+
+    Each row is a list of strings with the following columns:
+      - Datum: formatted using DATE_NOTATION_STRING
+      - Groep: group name (e.g., "Welpen ma", "Scouts vr")
+      - Ruimte: assigned activity returned by get_activity()
+      - Gedaan?: placeholder for completion status
+      - Containers: notes about containers (e.g., recycling instructions)
+      - Bijzonderheden?: special notes
+
+    Iteration details:
+    - Iterates from module-level start_day (inclusive) up to end_day (exclusive).
+    - Increments one day at a time and uses weekday matching to determine group rows.
+    - Sundays are skipped (not included in the returned grid).
+    - The day_counter is used to select activities cyclically via get_activity().
+    """
     day_counter = 0
     csv_data = []
     date = start_day
     while date < end_day:
-        # day_of_year = date.timetuple().tm_yday
-        bijzonderheden = ""
+        container = ""
+        bijzonderheden = is_every_eighth_day(date)
         match date.weekday():
             # Mondays
             case 0:
                 csv_data.append([
                     date.strftime(DATE_NOTATION_STRING),
-                    "Welpen ma",
+                    "Welpen maaandag",
                     get_activity(day_counter),
                     "",
+                    container,
                     bijzonderheden,
-                    "",
                 ])
             # Tuesdays
             case 1:
@@ -47,54 +64,54 @@ def generate_grid() -> list[list[str]]:
                     "Explorers",
                     get_activity(day_counter),
                     "",
+                    container,
                     bijzonderheden,
-                    "",
                 ])
             # Wednesdays
             case 2:
                 if is_week_number_even(date):
-                    bijzonderheden = "Plastic buiten zetten"
+                    container = "Plastic buiten zetten"
                 csv_data.append([
                     date.strftime(DATE_NOTATION_STRING),
-                    "Scouts wo",
+                    "Scouts woensdag",
                     get_activity(day_counter),
                     "",
+                    container,
                     bijzonderheden,
-                    "",
                 ])
             # Thursdays
             case 3:
                 # if is_week_number_even(date):
-                #     bijzonderheden = "Groen buiten zetten"
+                #     container = "Groen buiten zetten"
                 csv_data.append([
                     date.strftime(DATE_NOTATION_STRING),
-                    "Welpen do",
+                    "Welpen donderdag",
                     get_activity(day_counter),
                     "",
+                    container,
                     bijzonderheden,
-                    "",
                 ])
             # Print Fridays twice
             case 4:
                 if is_third_saturday_of_month(date):
-                    bijzonderheden = "Papier naar buiten"
+                    container = "Papier naar buiten"
                 csv_data.append([
                     date.strftime(DATE_NOTATION_STRING),
-                    "Scouts vr",
+                    "Scouts vrijdag",
                     get_activity(day_counter),
                     "",
+                    container,
                     bijzonderheden,
-                    "",
                 ])
                 # day_counter = day_counter + 1
                 if is_third_saturday_of_month(date):
-                    bijzonderheden = "Papier naar buiten"
+                    container = "Papier naar buiten"
                 # csv_data.append([
                 #     date.strftime(DATE_NOTATION_STRING),
                 #     "Rover / Stam",
                 #     get_activity(day_counter),
                 #     "",
-                #     bijzonderheden,
+                #     container,
                 #     "",
                 # ])
             # Saturdays
@@ -104,10 +121,10 @@ def generate_grid() -> list[list[str]]:
                     dwijlen = "Zaal dwijlen"
                 csv_data.append([
                     date.strftime(DATE_NOTATION_STRING),
-                    "Bevers za",
+                    "Bevers zaterdag",
                     dwijlen,
+                    container,
                     bijzonderheden,
-                    "",
                     "",
                 ])
             # Do not print Sundays
@@ -172,6 +189,27 @@ def is_week_number_even(date):
         f"{date.strftime(DATE_NOTATION_STRING)}: {week_number % 2 == 0} ({date.isocalendar()})"
     )
     return week_number % 2 == 0
+
+
+def is_every_eighth_day(date) -> str:
+    """
+    Return "Vuile was meenemen!" when `date` falls on every 8th day counting from `start_day`,
+    otherwise return an empty string.
+    The function accepts a datetime or date-like object. Dates before start_day return an empty string.
+    """
+    # Normalize to a date object whether the caller passed a datetime or date
+    try:
+        dt = date.date()
+    except Exception:
+        dt = date
+
+    # Ensure start_day is compared as a date
+    start_dt = start_day.date() if hasattr(start_day, "date") else start_day
+
+    days_since_start = (dt - start_dt).days
+    if days_since_start < 0:
+        return ""
+    return "Vuile was meenemen!" if days_since_start % 8 == 0 else ""
 
 
 def get_activity(day_counter: int) -> str:
