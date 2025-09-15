@@ -6,11 +6,11 @@ from typing import List
 locale.setlocale(locale.LC_ALL, "nl_NL")
 # current_locale = locale.getlocale()
 
-DATE_NOTATION_STRING = "%A %d %B %Y"
+DATE_NOTATION_STRING = "%A %d %B"
 # DATE_NOTATION_STRING = "%d/%m/%Y"
 # start_day = datetime(2024, 7, 27)
 start_day = datetime(2025, 9, 15)
-end_day = datetime(2025, 7, 16)
+end_day = datetime(2026, 7, 16)
 activities = [
     "Toiletten-1 schoonmaken",
     "Grote zaal opruimen / goed vegen",
@@ -34,7 +34,7 @@ def generate_grid() -> list[list[str]]:
             case 0:
                 csv_data.append([
                     date.strftime(DATE_NOTATION_STRING),
-                    "Welpen maandag",
+                    "Welpen ma",
                     get_activity(day_counter),
                     "",
                     bijzonderheden,
@@ -56,7 +56,7 @@ def generate_grid() -> list[list[str]]:
                     bijzonderheden = "Plastic buiten zetten"
                 csv_data.append([
                     date.strftime(DATE_NOTATION_STRING),
-                    "Scouts woensdag",
+                    "Scouts wo",
                     get_activity(day_counter),
                     "",
                     bijzonderheden,
@@ -64,11 +64,11 @@ def generate_grid() -> list[list[str]]:
                 ])
             # Thursdays
             case 3:
-                if is_week_number_even(date):
-                    bijzonderheden = "Groen buiten zetten"
+                # if is_week_number_even(date):
+                #     bijzonderheden = "Groen buiten zetten"
                 csv_data.append([
                     date.strftime(DATE_NOTATION_STRING),
-                    "Welpen donderdag",
+                    "Welpen do",
                     get_activity(day_counter),
                     "",
                     bijzonderheden,
@@ -76,25 +76,27 @@ def generate_grid() -> list[list[str]]:
                 ])
             # Print Fridays twice
             case 4:
-                csv_data.append([
-                    date.strftime(DATE_NOTATION_STRING),
-                    "Scouts Vrijdag",
-                    get_activity(day_counter),
-                    "",
-                    bijzonderheden,
-                    "",
-                ])
-                day_counter = day_counter + 1
                 if is_third_saturday_of_month(date):
                     bijzonderheden = "Papier naar buiten"
                 csv_data.append([
                     date.strftime(DATE_NOTATION_STRING),
-                    "Rover / Stam",
+                    "Scouts vr",
                     get_activity(day_counter),
                     "",
                     bijzonderheden,
                     "",
                 ])
+                # day_counter = day_counter + 1
+                if is_third_saturday_of_month(date):
+                    bijzonderheden = "Papier naar buiten"
+                # csv_data.append([
+                #     date.strftime(DATE_NOTATION_STRING),
+                #     "Rover / Stam",
+                #     get_activity(day_counter),
+                #     "",
+                #     bijzonderheden,
+                #     "",
+                # ])
             # Saturdays
             case 5:
                 dwijlen = get_activity(day_counter)
@@ -102,7 +104,7 @@ def generate_grid() -> list[list[str]]:
                     dwijlen = "Zaal dwijlen"
                 csv_data.append([
                     date.strftime(DATE_NOTATION_STRING),
-                    "Bevers zaterdag",
+                    "Bevers za",
                     dwijlen,
                     bijzonderheden,
                     "",
