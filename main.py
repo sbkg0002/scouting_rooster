@@ -10,7 +10,7 @@ locale.setlocale(locale.LC_ALL, "nl_NL")
 DATE_NOTATION_STRING = "%A %d %B"
 # DATE_NOTATION_STRING = "%d/%m/%Y"
 # start_day = datetime(2024, 7, 27)
-start_day = datetime(2025, 10, 10)
+start_day = datetime(2025, 11, 10)
 end_day = datetime(2026, 7, 16)
 activities = [
     "Toiletten-1 schoonmaken",
@@ -46,7 +46,7 @@ def generate_grid() -> list[list[str]]:
     date = start_day
     while date < end_day:
         container = ""
-        bijzonderheden = is_every_eighth_day(day_counter)
+        bijzonderheden = ""
         match date.weekday():
             # Mondays
             case 0:
@@ -109,17 +109,6 @@ def generate_grid() -> list[list[str]]:
                     container,
                     bijzonderheden,
                 ])
-                # day_counter = day_counter + 1
-                # if is_third_saturday_of_month(date):
-                #     container = "Papier naar buiten"
-                # csv_data.append([
-                #     date.strftime(DATE_NOTATION_STRING),
-                #     "Rover / Stam",
-                #     get_activity(day_counter),
-                #     "",
-                #     container,
-                #     "",
-                # ])
             # Saturdays
             case 5:
                 dwijlen = get_activity(day_counter, date)
@@ -132,7 +121,7 @@ def generate_grid() -> list[list[str]]:
                     dwijlen,
                     "",
                     container,
-                    bijzonderheden,
+                    "Wasmachine aan!",
                 ])
             # Do not print Sundays
             case 6:
@@ -219,34 +208,6 @@ def get_week_number(date) -> int:
         dt = date
     return dt.isocalendar()[1]
 
-
-def is_every_eighth_day(day_counter: int) -> str:
-    """
-    Washing machine schedule ("wasmachine") using day_counter:
-
-    - Every 8th counted day (day_counter % 8 == 0): return "Wasmachine aan!"
-    - Every 9th counted day (day_counter % 9 == 0): return "Wasmachine uitruimen"
-    - Otherwise return an empty string.
-
-    Accepts day_counter (int) where 0 corresponds to the first counted day (the same origin as the existing day_counter variable).
-    """
-    # Validate and coerce input
-    print(day_counter)
-    if not isinstance(day_counter, int):
-        try:
-            day_counter = int(day_counter)
-        except Exception:
-            return ""
-    if day_counter < 0:
-        return ""
-    # Prioritize the 8-day action when both conditions coincide (e.g., day_counter == 0).
-    if day_counter % 8 == 0:
-        print("Wasmachine aan!")
-        return "Wasmachine aan!"
-    if day_counter % 8 == 1:
-        print("Wasmachine uitruimen")
-        return "Wasmachine uitruimen"
-    return ""
 
 def per_week(number: int) -> int:
     """Return how many times 7 fits in the given number."""
