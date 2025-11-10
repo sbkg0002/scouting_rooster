@@ -45,11 +45,12 @@ def generate_grid() -> list[list[str]]:
     date = start_day
     while date < end_day:
         container = ""
-        bijzonderheden = is_every_eighth_day(date)
+        bijzonderheden = is_every_eighth_day(day_counter)
         match date.weekday():
             # Mondays
             case 0:
                 csv_data.append([
+                    get_week_number(date),
                     date.strftime(DATE_NOTATION_STRING),
                     "Welpen maaandag",
                     get_activity(day_counter),
@@ -60,6 +61,7 @@ def generate_grid() -> list[list[str]]:
             # Tuesdays
             case 1:
                 csv_data.append([
+                    "",
                     date.strftime(DATE_NOTATION_STRING),
                     "Explorers",
                     get_activity(day_counter),
@@ -72,6 +74,7 @@ def generate_grid() -> list[list[str]]:
                 if is_week_number_even(date):
                     container = "Plastic buiten zetten"
                 csv_data.append([
+                    "",
                     date.strftime(DATE_NOTATION_STRING),
                     "Scouts woensdag",
                     get_activity(day_counter),
@@ -84,6 +87,7 @@ def generate_grid() -> list[list[str]]:
                 # if is_week_number_even(date):
                 #     container = "Groen buiten zetten"
                 csv_data.append([
+                    "",
                     date.strftime(DATE_NOTATION_STRING),
                     "Welpen donderdag",
                     get_activity(day_counter),
@@ -96,6 +100,7 @@ def generate_grid() -> list[list[str]]:
                 if is_third_saturday_of_month(date):
                     container = "Papier naar buiten"
                 csv_data.append([
+                    "",
                     date.strftime(DATE_NOTATION_STRING),
                     "Scouts vrijdag",
                     get_activity(day_counter),
@@ -104,8 +109,8 @@ def generate_grid() -> list[list[str]]:
                     bijzonderheden,
                 ])
                 # day_counter = day_counter + 1
-                if is_third_saturday_of_month(date):
-                    container = "Papier naar buiten"
+                # if is_third_saturday_of_month(date):
+                #     container = "Papier naar buiten"
                 # csv_data.append([
                 #     date.strftime(DATE_NOTATION_STRING),
                 #     "Rover / Stam",
@@ -120,12 +125,13 @@ def generate_grid() -> list[list[str]]:
                 if is_last_saturday_of_month(date):
                     dwijlen = "Zaal dwijlen"
                 csv_data.append([
+                    "",
                     date.strftime(DATE_NOTATION_STRING),
                     "Bevers zaterdag",
                     dwijlen,
+                    "",
                     container,
                     bijzonderheden,
-                    "",
                 ])
             # Do not print Sundays
             case 6:
@@ -141,7 +147,15 @@ def generate_grid() -> list[list[str]]:
 
 
 def generate_header() -> List[str]:
-    return ["Datum", "Groep", "Ruimte", "Gedaan?", "Containers", "Bijzonderheden?"]
+    return [
+        "wk",
+        "Datum",
+        "Groep",
+        "Ruimte",
+        "Gedaan?",
+        "Containers",
+        "Bijzonderheden?",
+    ]
 
 
 def write_csv_from_lists(
@@ -185,31 +199,53 @@ def is_third_saturday_of_month(dt):
 
 def is_week_number_even(date):
     week_number = date.isocalendar()[1]
-    print(
-        f"{date.strftime(DATE_NOTATION_STRING)}: {week_number % 2 == 0} ({date.isocalendar()})"
-    )
+    # print(
+    #     f"{date.strftime(DATE_NOTATION_STRING)}: {week_number % 2 == 0} ({date.isocalendar()})"
+    # )
     return week_number % 2 == 0
 
 
-def is_every_eighth_day(date) -> str:
+def get_week_number(date) -> int:
     """
-    Return "Vuile was meenemen!" when `date` falls on every 8th day counting from `start_day`,
-    otherwise return an empty string.
-    The function accepts a datetime or date-like object. Dates before start_day return an empty string.
+    Return the ISO week number for the given date.
+
+    Accepts either a datetime or date object. The returned value is the
+    week number as an integer (1-53) according to ISO-8601.
     """
-    # Normalize to a date object whether the caller passed a datetime or date
     try:
         dt = date.date()
     except Exception:
         dt = date
+    return dt.isocalendar()[1]
 
-    # Ensure start_day is compared as a date
-    start_dt = start_day.date() if hasattr(start_day, "date") else start_day
 
-    days_since_start = (dt - start_dt).days
-    if days_since_start < 0:
+def is_every_eighth_day(day_counter: int) -> str:
+    """
+    Washing machine schedule ("wasmachine") using day_counter:
+
+    - Every 8th counted day (day_counter % 8 == 0): return "Wasmachine aan!"
+    - Every 9th counted day (day_counter % 9 == 0): return "Wasmachine uitruimen"
+    - Otherwise return an empty string.
+
+    Accepts day_counter (int) where 0 corresponds to the first counted day (the same origin as the existing day_counter variable).
+    """
+    # Validate and coerce input
+    print(day_counter)
+    if not isinstance(day_counter, int):
+        try:
+            day_counter = int(day_counter)
+        except Exception:
+            return ""
+    if day_counter < 0:
         return ""
-    return "Vuile was meenemen!" if days_since_start % 8 == 0 else ""
+    # Prioritize the 8-day action when both conditions coincide (e.g., day_counter == 0).
+    if day_counter % 8 == 0:
+        print("Wasmachine aan!")
+        return "Wasmachine aan!"
+    if day_counter % 8 == 1:
+        print("Wasmachine uitruimen")
+        return "Wasmachine uitruimen"
+    return ""
 
 
 def get_activity(day_counter: int) -> str:
