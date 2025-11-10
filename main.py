@@ -1,5 +1,6 @@
 import csv
 import locale
+import random
 from datetime import datetime, timedelta
 from typing import List
 
@@ -9,7 +10,7 @@ locale.setlocale(locale.LC_ALL, "nl_NL")
 DATE_NOTATION_STRING = "%A %d %B"
 # DATE_NOTATION_STRING = "%d/%m/%Y"
 # start_day = datetime(2024, 7, 27)
-start_day = datetime(2025, 9, 15)
+start_day = datetime(2025, 10, 10)
 end_day = datetime(2026, 7, 16)
 activities = [
     "Toiletten-1 schoonmaken",
@@ -20,7 +21,7 @@ activities = [
     "Zolder opruimen",
     "Buiten opruimen",
 ]
-
+activities_per_wk = {}
 
 def generate_grid() -> list[list[str]]:
     """
@@ -52,8 +53,8 @@ def generate_grid() -> list[list[str]]:
                 csv_data.append([
                     get_week_number(date),
                     date.strftime(DATE_NOTATION_STRING),
-                    "Welpen maaandag",
-                    get_activity(day_counter),
+                    "Welpen maandag",
+                    get_activity(day_counter, date),
                     "",
                     container,
                     bijzonderheden,
@@ -64,7 +65,7 @@ def generate_grid() -> list[list[str]]:
                     "",
                     date.strftime(DATE_NOTATION_STRING),
                     "Explorers",
-                    get_activity(day_counter),
+                    get_activity(day_counter, date),
                     "",
                     container,
                     bijzonderheden,
@@ -77,7 +78,7 @@ def generate_grid() -> list[list[str]]:
                     "",
                     date.strftime(DATE_NOTATION_STRING),
                     "Scouts woensdag",
-                    get_activity(day_counter),
+                    get_activity(day_counter, date),
                     "",
                     container,
                     bijzonderheden,
@@ -90,7 +91,7 @@ def generate_grid() -> list[list[str]]:
                     "",
                     date.strftime(DATE_NOTATION_STRING),
                     "Welpen donderdag",
-                    get_activity(day_counter),
+                    get_activity(day_counter, date),
                     "",
                     container,
                     bijzonderheden,
@@ -103,7 +104,7 @@ def generate_grid() -> list[list[str]]:
                     "",
                     date.strftime(DATE_NOTATION_STRING),
                     "Scouts vrijdag",
-                    get_activity(day_counter),
+                    get_activity(day_counter, date),
                     "",
                     container,
                     bijzonderheden,
@@ -121,7 +122,7 @@ def generate_grid() -> list[list[str]]:
                 # ])
             # Saturdays
             case 5:
-                dwijlen = get_activity(day_counter)
+                dwijlen = get_activity(day_counter, date)
                 if is_last_saturday_of_month(date):
                     dwijlen = "Zaal dwijlen"
                 csv_data.append([
@@ -247,10 +248,55 @@ def is_every_eighth_day(day_counter: int) -> str:
         return "Wasmachine uitruimen"
     return ""
 
+def per_week(number: int) -> int:
+    """Return how many times 7 fits in the given number."""
+    return number // 7
 
-def get_activity(day_counter: int) -> str:
-    activity_number = day_counter % (len(activities) - 1)
-    return activities[activity_number]
+
+def get_random_weekly_activities(week_number: int) -> List[str]:
+    """
+    Generate a random permutation of all activities for a given week.
+
+    Each week gets a shuffled version of all activities, ensuring each
+    activity is used exactly once per week.
+
+    Args:
+        week_number: The week number to generate activities for
+
+    Returns:
+        List of activities in random order for the week
+    """
+    # Use week number as seed for consistent randomization
+    random.seed(week_number * 42)  # Multiply by arbitrary number for better distribution
+    shuffled_activities = activities.copy()
+    random.shuffle(shuffled_activities)
+    return shuffled_activities
+
+def get_activity(day_counter: int, date: datetime) -> str:
+    """
+    Get the activity for a specific day, ensuring all activities are used per week.
+
+    This function ensures that:
+    - All 7 activities are used exactly once per week
+    - Activities are randomly distributed within each week
+    - The same week always gets the same random arrangement (deterministic)
+    - Uses ISO week numbers for proper calendar week alignment
+
+    Args:
+        day_counter: The day counter (0-based)
+        date: The actual date for this day
+
+    Returns:
+        The activity name for that day
+    """
+    week_number = date.isocalendar()[1]  # Use ISO week number
+    day_in_week = day_counter % 7  # 0-6 for days within the week
+
+    # Get or generate the activities for this week
+    if week_number not in activities_per_wk:
+        activities_per_wk[week_number] = get_random_weekly_activities(week_number)
+
+    return activities_per_wk[week_number][day_in_week]
 
 
 if __name__ == "__main__":
