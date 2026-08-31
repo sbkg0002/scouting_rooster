@@ -1,266 +1,257 @@
+"""Genereer het schoonmaakrooster voor Scouting als CSV (rooster.csv)."""
+
+import calendar
 import csv
 import locale
 import random
-from datetime import datetime, timedelta
-from typing import List
+import sys
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field, fields
+from datetime import date, timedelta
+from pathlib import Path
 
-locale.setlocale(locale.LC_ALL, "nl_NL")
-# current_locale = locale.getlocale()
+DATE_FORMAT = "%A %d %B"
+DUTCH_LOCALES = ("nl_NL.UTF-8", "nl_NL", "nl")
 
-DATE_NOTATION_STRING = "%A %d %B"
-# DATE_NOTATION_STRING = "%d/%m/%Y"
-# start_day = datetime(2024, 7, 27)
-start_day = datetime(2025, 11, 10)
-end_day = datetime(2026, 7, 16)
-activities = [
-    "Toiletten-1 schoonmaken",
+SEASON_START = date(2026, 9, 7)
+SEASON_END = date(2027, 7, 16)
+OUTPUT_PATH = Path("rooster.csv")
+
+ACTIVITIES: tuple[str, ...] = (
+    "Toiletten schoonmaken",
     "Grote zaal opruimen / goed vegen",
     "Keuken opruimen / dweilen",
     "Hal vegen / dweilen",
-    "Toiletten-2 schoonmaken",
+    "Toiletten schoonmaken",
     "Zolder opruimen",
     "Buiten opruimen",
-]
-activities_per_wk = {}
+)
+SHUFFLE_SEED_FACTOR = 42
+MAX_SHUFFLE_ATTEMPTS = 1000
 
-def generate_grid() -> list[list[str]]:
+HALL_MOPPING = "Zaal dweilen"
+PLASTIC_NOTE = "Plastic buiten zetten"
+PAPER_NOTE = "Papier naar buiten"
+WASHING_MACHINE_NOTE = "Wasmachine aan!"
+
+
+@dataclass(frozen=True, slots=True)
+class DutyGroup:
+    """The group on duty on a given weekday, plus its fixed roster details."""
+
+    name: str
+    shows_week_number: bool = False
+    remark: str = ""
+
+
+DUTY_GROUPS: Mapping[calendar.Day, DutyGroup] = {
+    calendar.Day.MONDAY: DutyGroup("Welpen maandag", shows_week_number=True),
+    calendar.Day.TUESDAY: DutyGroup("Explorers"),
+    calendar.Day.WEDNESDAY: DutyGroup("Scouts woensdag"),
+    calendar.Day.THURSDAY: DutyGroup("Welpen donderdag"),
+    calendar.Day.FRIDAY: DutyGroup("Scouts vrijdag"),
+    calendar.Day.SATURDAY: DutyGroup("Bevers zaterdag", remark=WASHING_MACHINE_NOTE),
+    # zondag: geen dienst
+}
+
+
+@dataclass(frozen=True, slots=True)
+class RosterRow:
+    """One roster line; the field order below is the CSV column order."""
+
+    week_number: str = field(metadata={"header": "wk"})
+    date: str = field(metadata={"header": "Datum"})
+    group: str = field(metadata={"header": "Groep"})
+    activity: str = field(metadata={"header": "Ruimte"})
+    done: str = field(metadata={"header": "Gedaan?"})
+    container: str = field(metadata={"header": "Containers"})
+    remark: str = field(metadata={"header": "Bijzonderheden?"})
+
+
+def week_ordinal(day: date) -> int:
+    """Return a running week counter that increments on every Monday.
+
+    Day ordinal 1 (0001-01-01) was a Monday, so this counts Monday-aligned weeks
+    since then. Unlike an ISO week number it never wraps at new year, which keeps
+    the activity rotation continuous across seasons.
     """
-    Generate the schedule grid as a list of rows for CSV output.
+    return (day.toordinal() - 1) // 7
 
-    Each row is a list of strings with the following columns:
-      - Datum: formatted using DATE_NOTATION_STRING
-      - Groep: group name (e.g., "Welpen ma", "Scouts vr")
-      - Ruimte: assigned activity returned by get_activity()
-      - Gedaan?: placeholder for completion status
-      - Containers: notes about containers (e.g., recycling instructions)
-      - Bijzonderheden?: special notes
 
-    Iteration details:
-    - Iterates from module-level start_day (inclusive) up to end_day (exclusive).
-    - Increments one day at a time and uses weekday matching to determine group rows.
-    - Sundays are skipped (not included in the returned grid).
-    - The day_counter is used to select activities cyclically via get_activity().
+def is_even_week(day: date) -> bool:
+    """Return whether the day falls in an even ISO week."""
+    return day.isocalendar().week % 2 == 0
+
+
+def is_last_saturday_of_month(day: date) -> bool:
+    """Return whether the day is the last Saturday of its month."""
+    if day.weekday() != calendar.Day.SATURDAY:
+        return False
+    next_month = day.replace(day=28) + timedelta(days=4)  # never overflows
+    last_of_month = next_month - timedelta(days=next_month.day)
+    return day + timedelta(days=7) > last_of_month
+
+
+def is_day_before_third_saturday(day: date) -> bool:
+    """Return whether the next day is the third Saturday of its month."""
+    tomorrow = day + timedelta(days=1)
+    if tomorrow.weekday() != calendar.Day.SATURDAY:
+        return False
+    first_of_month = tomorrow.replace(day=1)
+    days_until_saturday = (calendar.Day.SATURDAY - first_of_month.weekday()) % 7
+    third_saturday = first_of_month + timedelta(days=days_until_saturday, weeks=2)
+    return tomorrow == third_saturday
+
+
+CONTAINER_RULES: tuple[tuple[calendar.Day, Callable[[date], bool], str], ...] = (
+    (calendar.Day.WEDNESDAY, is_even_week, PLASTIC_NOTE),
+    (calendar.Day.FRIDAY, is_day_before_third_saturday, PAPER_NOTE),
+    # (calendar.Day.THURSDAY, is_even_week, "Groen buiten zetten"),  # uitgeschakeld
+)
+
+
+def format_dutch_date(day: date) -> str:
+    """Format a date the way it appears in the roster, e.g. 'maandag 10 november'."""
+    return day.strftime(DATE_FORMAT)
+
+
+def repeats_an_activity(order: Sequence[str], previous_activity: str) -> bool:
+    """Return whether any activity in the order follows itself.
+
+    The previous week's final activity counts as coming before the first one, so
+    the Saturday/Monday seam is checked too.
     """
-    day_counter = 0
-    csv_data = []
-    date = start_day
-    while date < end_day:
-        container = ""
-        bijzonderheden = ""
-        match date.weekday():
-            # Mondays
-            case 0:
-                csv_data.append([
-                    get_week_number(date),
-                    date.strftime(DATE_NOTATION_STRING),
-                    "Welpen maandag",
-                    get_activity(day_counter, date),
-                    "",
-                    container,
-                    bijzonderheden,
-                ])
-            # Tuesdays
-            case 1:
-                csv_data.append([
-                    "",
-                    date.strftime(DATE_NOTATION_STRING),
-                    "Explorers",
-                    get_activity(day_counter, date),
-                    "",
-                    container,
-                    bijzonderheden,
-                ])
-            # Wednesdays
-            case 2:
-                if is_week_number_even(date):
-                    container = "Plastic buiten zetten"
-                csv_data.append([
-                    "",
-                    date.strftime(DATE_NOTATION_STRING),
-                    "Scouts woensdag",
-                    get_activity(day_counter, date),
-                    "",
-                    container,
-                    bijzonderheden,
-                ])
-            # Thursdays
-            case 3:
-                # if is_week_number_even(date):
-                #     container = "Groen buiten zetten"
-                csv_data.append([
-                    "",
-                    date.strftime(DATE_NOTATION_STRING),
-                    "Welpen donderdag",
-                    get_activity(day_counter, date),
-                    "",
-                    container,
-                    bijzonderheden,
-                ])
-            # Print Fridays twice
-            case 4:
-                if is_third_saturday_of_month(date):
-                    container = "Papier naar buiten"
-                csv_data.append([
-                    "",
-                    date.strftime(DATE_NOTATION_STRING),
-                    "Scouts vrijdag",
-                    get_activity(day_counter, date),
-                    "",
-                    container,
-                    bijzonderheden,
-                ])
-            # Saturdays
-            case 5:
-                dwijlen = get_activity(day_counter, date)
-                if is_last_saturday_of_month(date):
-                    dwijlen = "Zaal dwijlen"
-                csv_data.append([
-                    "",
-                    date.strftime(DATE_NOTATION_STRING),
-                    "Bevers zaterdag",
-                    dwijlen,
-                    "",
-                    container,
-                    "Wasmachine aan!",
-                ])
-            # Do not print Sundays
-            case 6:
-                # print(f'skipping: {date.strftime("%A")}')
-                date = date + timedelta(days=1)
-                continue
-
-        # csv_data.append([date.strftime(DATE_NOTATION_STRING))
-        # print(day_of_season)
-        date = date + timedelta(days=1)
-        day_counter = day_counter + 1
-    return csv_data
+    return any(
+        earlier == later
+        for earlier, later in zip((previous_activity, *order), order, strict=False)
+    )
 
 
-def generate_header() -> List[str]:
+def weekly_activity_order(week: int, previous_activity: str = "") -> tuple[str, ...]:
+    """Return one week's activities, indexed by weekday (0 = Monday .. 5 = Saturday).
+
+    A week has six duty days but there are seven activities, so exactly one is
+    skipped. The skipped one advances by one each week, so every activity is done
+    six weeks out of seven.
+
+    The remaining six are shuffled deterministically -- regenerating the roster
+    always yields the same result -- and reshuffled until no activity is scheduled
+    on two consecutive duty days, including directly after previous_activity (pass
+    the previous week's Saturday activity).
+    """
+    skipped = week % len(ACTIVITIES)
+    order = [activity for i, activity in enumerate(ACTIVITIES) if i != skipped]
+    rng = random.Random(week * SHUFFLE_SEED_FACTOR)
+    for _ in range(MAX_SHUFFLE_ATTEMPTS):
+        rng.shuffle(order)
+        if not repeats_an_activity(order, previous_activity):
+            return tuple(order)
+    raise ValueError(
+        f"Kan week {week} niet indelen zonder herhaling; "
+        f"staan er te veel dezelfde activiteiten in ACTIVITIES?"
+    )
+
+
+def season_activities(days: Sequence[date]) -> Iterator[str]:
+    """Yield the activity for each duty day, never repeating two days in a row.
+
+    On the last Saturday of the month the whole hall is mopped instead, so that
+    week uses one activity fewer than usual.
+    """
+    previous_activity = ""
+    week: int | None = None
+    order: tuple[str, ...] = ()
+    for day in days:
+        if week_ordinal(day) != week:
+            week = week_ordinal(day)
+            order = weekly_activity_order(week, previous_activity)
+        previous_activity = (
+            HALL_MOPPING if is_last_saturday_of_month(day) else order[day.weekday()]
+        )
+        yield previous_activity
+
+
+def container_note_for(day: date) -> str:
+    """Return the bin instruction for this day, or an empty string when none applies."""
+    for weekday, applies, note in CONTAINER_RULES:
+        if day.weekday() == weekday and applies(day):
+            return note
+    return ""
+
+
+def duty_dates(start: date, end: date) -> Iterator[date]:
+    """Yield every date in [start, end) that has a group on duty, skipping Sundays."""
+    day = start
+    while day < end:
+        if day.weekday() in DUTY_GROUPS:
+            yield day
+        day += timedelta(days=1)
+
+
+def build_row(day: date, activity: str) -> RosterRow:
+    """Build the roster line for one duty day."""
+    group = DUTY_GROUPS[calendar.Day(day.weekday())]
+    return RosterRow(
+        week_number=str(day.isocalendar().week) if group.shows_week_number else "",
+        date=format_dutch_date(day),
+        group=group.name,
+        activity=activity,
+        done="",
+        container=container_note_for(day),
+        remark=group.remark,
+    )
+
+
+def build_roster(start: date, end: date) -> list[RosterRow]:
+    """Build every roster line for the season, in date order."""
+    days = list(duty_dates(start, end))
     return [
-        "wk",
-        "Datum",
-        "Groep",
-        "Ruimte",
-        "Gedaan?",
-        "Containers",
-        "Bijzonderheden?",
+        build_row(day, activity)
+        for day, activity in zip(days, season_activities(days), strict=True)
     ]
 
 
-def write_csv_from_lists(
-    data: list[list[str]], header: list[str], filename: str
-) -> None:
-    with open(filename, "w") as csv_file:
-        csv_file.write("sep=,\n")
-        csv_writer = csv.writer(csv_file)
-        csv_writer.writerow(header)  # write header
-        for row in data:
-            csv_writer.writerow(row)  # write each row
+def column_headers() -> list[str]:
+    """Return the CSV header row, derived from the RosterRow field order."""
+    return [column.metadata["header"] for column in fields(RosterRow)]
 
 
-def is_last_saturday_of_month(dt) -> bool:
-    # Check if the given date is a Saturday
-    if dt.weekday() != 5:
-        return False
-    # Get the last day of the month
-    next_month = dt.replace(day=28) + timedelta(days=4)  # this will never fail
-    last_day = next_month - timedelta(days=next_month.day)
-    # Check if the given date is the last Saturday
-    return dt + timedelta(days=7) > last_day
+def row_values(row: RosterRow) -> list[str]:
+    """Return one row as CSV cells, in the same order as column_headers()."""
+    return [getattr(row, column.name) for column in fields(RosterRow)]
 
 
-def is_third_saturday_of_month(dt):
-    # we check on Friday
-    sat = dt + timedelta(days=1)
-    # print(sat.strftime(DATE_NOTATION_STRING))
-    if sat.weekday() != 5:
-        return False
-    # Get the first day of the month
-    first_day_of_month = sat.replace(day=1)
-    # Calculate the first Saturday of the month
-    first_saturday = first_day_of_month + timedelta(
-        days=(5 - first_day_of_month.weekday() + 7) % 7
+def write_roster_csv(rows: Sequence[RosterRow], path: Path) -> None:
+    """Write the roster to an Excel-friendly CSV file."""
+    with path.open("w", newline="", encoding="utf-8") as csv_file:
+        csv_file.write("sep=,\n")  # hint voor Excel
+        writer = csv.writer(csv_file)
+        writer.writerow(column_headers())
+        writer.writerows(row_values(row) for row in rows)
+
+
+def use_dutch_locale(candidates: Sequence[str] = DUTCH_LOCALES) -> bool:
+    """Set LC_TIME to Dutch, or warn and keep the default locale if none is found."""
+    for name in candidates:
+        try:
+            locale.setlocale(locale.LC_TIME, name)
+            return True
+        except locale.Error:
+            continue
+    print(
+        "Waarschuwing: geen Nederlandse locale gevonden; datums in het Engels.",
+        file=sys.stderr,
     )
-    # Calculate the third Saturday
-    third_saturday = first_saturday + timedelta(weeks=2)
-    return sat.date() == third_saturday.date()
+    return False
 
 
-def is_week_number_even(date):
-    week_number = date.isocalendar()[1]
-    # print(
-    #     f"{date.strftime(DATE_NOTATION_STRING)}: {week_number % 2 == 0} ({date.isocalendar()})"
-    # )
-    return week_number % 2 == 0
-
-
-def get_week_number(date) -> int:
-    """
-    Return the ISO week number for the given date.
-
-    Accepts either a datetime or date object. The returned value is the
-    week number as an integer (1-53) according to ISO-8601.
-    """
-    try:
-        dt = date.date()
-    except Exception:
-        dt = date
-    return dt.isocalendar()[1]
-
-
-def per_week(number: int) -> int:
-    """Return how many times 7 fits in the given number."""
-    return number // 7
-
-
-def get_random_weekly_activities(week_number: int) -> List[str]:
-    """
-    Generate a random permutation of all activities for a given week.
-
-    Each week gets a shuffled version of all activities, ensuring each
-    activity is used exactly once per week.
-
-    Args:
-        week_number: The week number to generate activities for
-
-    Returns:
-        List of activities in random order for the week
-    """
-    # Use week number as seed for consistent randomization
-    random.seed(week_number * 42)  # Multiply by arbitrary number for better distribution
-    shuffled_activities = activities.copy()
-    random.shuffle(shuffled_activities)
-    return shuffled_activities
-
-def get_activity(day_counter: int, date: datetime) -> str:
-    """
-    Get the activity for a specific day, ensuring all activities are used per week.
-
-    This function ensures that:
-    - All 7 activities are used exactly once per week
-    - Activities are randomly distributed within each week
-    - The same week always gets the same random arrangement (deterministic)
-    - Uses ISO week numbers for proper calendar week alignment
-
-    Args:
-        day_counter: The day counter (0-based)
-        date: The actual date for this day
-
-    Returns:
-        The activity name for that day
-    """
-    week_number = date.isocalendar()[1]  # Use ISO week number
-    day_in_week = day_counter % 7  # 0-6 for days within the week
-
-    # Get or generate the activities for this week
-    if week_number not in activities_per_wk:
-        activities_per_wk[week_number] = get_random_weekly_activities(week_number)
-
-    return activities_per_wk[week_number][day_in_week]
+def main() -> None:
+    """Genereer het rooster en schrijf het naar rooster.csv."""
+    use_dutch_locale()
+    rows = build_roster(SEASON_START, SEASON_END)
+    write_roster_csv(rows, OUTPUT_PATH)
+    print(f"{len(rows)} diensten geschreven naar {OUTPUT_PATH}")
 
 
 if __name__ == "__main__":
-    write_csv_from_lists(
-        data=generate_grid(), header=generate_header(), filename="rooster.csv"
-    )
+    main()
