@@ -10,7 +10,10 @@ from dataclasses import dataclass, field, fields
 from datetime import date, timedelta
 from pathlib import Path
 
-DATE_FORMAT = "%A %d %B"
+# Het jaar hoort er echt bij: zonder jaartal gokt Excel er zelf een bij het inlezen
+# en dat wordt het verkeerde jaar zodra het seizoen over de jaarwissel loopt --
+# januari-rijen kwamen dan op een zondag uit terwijl de groep "Welpen maandag" is.
+DATE_FORMAT = "%A %d %B %Y"
 DUTCH_LOCALES = ("nl_NL.UTF-8", "nl_NL", "nl")
 
 SEASON_START = date(2026, 9, 7)
@@ -32,7 +35,9 @@ MAX_SHUFFLE_ATTEMPTS = 1000
 HALL_MOPPING = "Zaal dweilen"
 PLASTIC_NOTE = "Plastic buiten zetten"
 PAPER_NOTE = "Papier naar buiten"
-WASHING_MACHINE_NOTE = "Wasmachine aan!"
+WASHING_MACHINE_ON = "Wasmachine aan!"
+WASHING_MACHINE_OFF = "Wasmachine leeg!"
+NOTES_SEPARATOR = " / "
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,8 +54,8 @@ DUTY_GROUPS: Mapping[calendar.Day, DutyGroup] = {
     calendar.Day.TUESDAY: DutyGroup("Explorers"),
     calendar.Day.WEDNESDAY: DutyGroup("Scouts woensdag"),
     calendar.Day.THURSDAY: DutyGroup("Welpen donderdag"),
-    calendar.Day.FRIDAY: DutyGroup("Scouts vrijdag"),
-    calendar.Day.SATURDAY: DutyGroup("Bevers zaterdag", remark=WASHING_MACHINE_NOTE),
+    calendar.Day.FRIDAY: DutyGroup("Scouts vrijdag", remark=WASHING_MACHINE_ON),
+    calendar.Day.SATURDAY: DutyGroup("Bevers zaterdag", remark=WASHING_MACHINE_OFF),
     # zondag: geen dienst
 }
 
@@ -64,8 +69,7 @@ class RosterRow:
     group: str = field(metadata={"header": "Groep"})
     activity: str = field(metadata={"header": "Ruimte"})
     done: str = field(metadata={"header": "Gedaan?"})
-    container: str = field(metadata={"header": "Containers"})
-    remark: str = field(metadata={"header": "Bijzonderheden?"})
+    notes: str = field(metadata={"header": "Containers / Bijzonderheden?"})
 
 
 def week_ordinal(day: date) -> int:
@@ -179,6 +183,12 @@ def container_note_for(day: date) -> str:
     return ""
 
 
+def notes_for(day: date, group: DutyGroup) -> str:
+    """Combine this day's bin instruction and the group's remark into one cell."""
+    notes = (container_note_for(day), group.remark)
+    return NOTES_SEPARATOR.join(note for note in notes if note)
+
+
 def duty_dates(start: date, end: date) -> Iterator[date]:
     """Yield every date in [start, end) that has a group on duty, skipping Sundays."""
     day = start
@@ -197,8 +207,7 @@ def build_row(day: date, activity: str) -> RosterRow:
         group=group.name,
         activity=activity,
         done="",
-        container=container_note_for(day),
-        remark=group.remark,
+        notes=notes_for(day, group),
     )
 
 
